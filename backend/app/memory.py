@@ -100,11 +100,17 @@ def save_session(session_id_or_session, data: dict | None = None) -> None:
             if (ai.get("topic") or "").lower() == name
         ]
 
-        # rich embedding: name + contribution + verbatim excerpts + session-level concerns + topic actions
+        # rich embedding: name + contribution + verbatim excerpts + subtopics + concerns + topic actions
         parts = [name]
         if contribution:
             parts.append(contribution)
         parts.extend(excerpts)
+        for sub in tp.get("subtopics", []):
+            if sub.get("name"):
+                parts.append(sub["name"])
+            if sub.get("contribution"):
+                parts.append(sub["contribution"])
+            parts.extend(sub.get("excerpts", []))
         if concerns:
             parts.append(" ".join(concerns))
         if matching_actions:
