@@ -85,6 +85,40 @@ def _system_prompt(existing_topics: list[str], graph: dict[str, Any] | None = No
             "- Only include actionItems when genuinely implied by the text (you mention a task you "
             "could/should do). Do NOT invent action items for plain reflections — return an empty array then."
         )
+
+    # Topic-count guidance flips entirely depending on whether the user started
+    # from a template. With existing sections present, those sections are
+    # CONTAINERS and we file everything inside them (no 3-4 topic splitting).
+    # Blank start → natural extraction with the usual 3-4 topic spread.
+    if existing_topics:
+        existing = ", ".join(existing_topics)
+        topics_rule = f"""TEMPLATE MODE — existing sections are CONTAINERS, not peers.
+The existing sections are: {existing}
+These are broad life areas. Every specific thing the person mentions belongs INSIDE the closest container.
+Rules:
+- "violin", "guitar", "painting" → hobbies
+- "CS midterm", "homework", "exam", "studying" → school
+- "running", "cross country", "gym", "working out" → health
+- "mom", "dad", "sister" → family
+- A specific activity or task ALWAYS files under its closest container.
+- NEVER create a new topic if an existing container could hold it.
+- Only create a new topic (status "new") when something genuinely has NO existing container.
+- Return at most 1 new topic per entry. Aim for 0.
+- Do NOT create separate topics for each activity mentioned. Group them."""
+        reconcile_reuse = (
+            "- Set status 'existing' and reuse the EXACT existing container name when a topic fits "
+            "one of the existing sections (see TEMPLATE MODE above). Default to filing inside a container; "
+            "only use status 'new' for something with no possible container."
+        )
+    else:
+        topics_rule = """- AIM FOR 3-4 TOPICS whenever the entry has enough substance to support them. If you wrote or said several sentences about ONE subject, break its distinct facets into SEPARATE top-level topics (each becomes its own bubble), and link them with 'connects' — a richer spread of bubbles gets far more out of the visualization than one bubble with everything buried inside it. Example: a few sentences about someone you're seeing should become topics like "elliot jang", "what draws me to him", "red flags & harm", and "staying guarded" — NOT a single "elliot jang" topic with those buried as subtopics. The central subject (e.g. the person) is one topic; each major angle you reflect on becomes its own connected topic.
+- BUT never manufacture topics out of thin air — only split when the text genuinely contains distinct facets. Let the NUMBER OF TOPICS SCALE WITH THE LENGTH AND RICHNESS of the entry, with no fixed upper limit: a single short idea like "matcha tastes good" = 1 topic; "I have a CS midterm and I'm stressed about it" = 1 topic (one coherent worry); 2-3 sentences touching distinct angles = 2-3 topics; a few sentences with several distinct facets = 3-4 topics; a long, multi-paragraph entry that genuinely covers many distinct facets can have 5, 6, or more topics. The longer and more wide-ranging the text, the more bubbles it should produce — just make sure every topic corresponds to something actually distinct in the text, never filler.
+- When in doubt between burying a substantial facet as a subtopic vs. promoting it to its own top-level topic, PROMOTE it."""
+        reconcile_reuse = (
+            "- Set status 'existing' and reuse the EXACT existing name when a topic is clearly one already on the map.\n"
+            "- When the CURRENT MAP lists NO existing sections (the user started blank), do NOT force anything — "
+            "extract topics naturally per the rules above, creating them as 'new'."
+        )
     return f"""You extract structure from a person's short journal or voice-note text for a mind-map journaling app, AND reconcile it against the map they have built so far. Return ONLY a JSON object and nothing else (no prose, no markdown fences).
 
 VOICE — IMPORTANT: every piece of human-readable text you generate (title, summary, each topic/subtopic 'contribution', concerns, actionItems) must address the writer directly as "you"/"your". NEVER refer to the writer in the third person — do NOT write "the user", "the person", "they", "she", or "he". E.g. write "you're stressed about your CS midterm", not "the user is stressed about their CS midterm".
@@ -99,9 +133,7 @@ Schema:
 Rules:
 - title is a short (3-6 word) human-friendly headline for THIS whole entry.
 - topics are the main ideas / areas of life mentioned. Names are short and lowercase.
-- AIM FOR 3-4 TOPICS whenever the entry has enough substance to support them. If you wrote or said several sentences about ONE subject, break its distinct facets into SEPARATE top-level topics (each becomes its own bubble), and link them with 'connects' — a richer spread of bubbles gets far more out of the visualization than one bubble with everything buried inside it. Example: a few sentences about someone you're seeing should become topics like "elliot jang", "what draws me to him", "red flags & harm", and "staying guarded" — NOT a single "elliot jang" topic with those buried as subtopics. The central subject (e.g. the person) is one topic; each major angle you reflect on becomes its own connected topic.
-- BUT never manufacture topics out of thin air — only split when the text genuinely contains distinct facets. Let the NUMBER OF TOPICS SCALE WITH THE LENGTH AND RICHNESS of the entry, with no fixed upper limit: a single short idea like "matcha tastes good" = 1 topic; "I have a CS midterm and I'm stressed about it" = 1 topic (one coherent worry); 2-3 sentences touching distinct angles = 2-3 topics; a few sentences with several distinct facets = 3-4 topics; a long, multi-paragraph entry that genuinely covers many distinct facets can have 5, 6, or more topics. The longer and more wide-ranging the text, the more bubbles it should produce — just make sure every topic corresponds to something actually distinct in the text, never filler.
-- When in doubt between burying a substantial facet as a subtopic vs. promoting it to its own top-level topic, PROMOTE it.
+{topics_rule}
 - weight is 1-5: how central/important this topic is in THIS entry.
 - 'connects' lists other topic names from this same response that are related.
 - 'contribution' is ONE short sentence on how this entry relates to / contributes to this topic.
@@ -109,7 +141,7 @@ Rules:
 - 'subtopics' are for FINER-GRAINED detail nested under a top-level topic, used sparingly. Prefer promoting a substantial facet to its OWN top-level topic (see the 3-4 topics rule above); reserve subtopics for small details that clearly belong inside a single topic and aren't worth their own bubble (e.g. topic 'school' -> subtopic 'that one professor'). Names are short and lowercase. Each subtopic has its own 'contribution' (ONE short sentence on how this entry relates to that facet) and 'excerpts' (1-3 SHORT verbatim substrings, same exact-copy rule as above). For a simple thought with nothing to break out, return an EMPTY subtopics array — do NOT invent facets.
 
 RECONCILIATION (compare each topic to the CURRENT MAP above and decide how it fits):
-- Set status 'existing' and reuse the EXACT existing name when a topic is clearly one already on the map.
+{reconcile_reuse}
 - RENAME (do this EAGERLY): the moment this entry reveals a more specific or proper name for something that already exists on the map as a vaguer/generic hub, RENAME the hub. Output the topic under the NEW proper name and set its reconcile to {{"action":"rename","target":"<OLD existing name>"}}. Renaming is LOW-RISK and REVERSIBLE — the old name is automatically kept as an alias, so nothing is lost. When in doubt, PREFER to rename rather than create a new topic or add a subtopic. A named person/place/thing that is plainly the subject of an existing generic hub MUST rename that hub — never add them as a separate topic or as a subtopic of the generic hub.
   Worked example: CURRENT MAP has a hub "romantic interest". New entry says "his name is Josh and I think he likes me too." Correct output: a topic with name "josh", reconcile {{"action":"rename","target":"romantic interest"}}. WRONG: making "josh" a new separate topic, or a subtopic of "romantic interest", or leaving the hub named "romantic interest".
   Generic hubs that should be renamed as soon as a proper name appears include things like: "romantic interest", "crush", "this person", "the guy/girl", "my friend", "someone", "a place", "the trip", "my job", "work thing", "the project". If the entry names them, rename.

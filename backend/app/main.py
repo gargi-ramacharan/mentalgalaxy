@@ -91,6 +91,7 @@ async def ws_transcribe(ws: WebSocket):
     sid = str(uuid.uuid4())
     ws_graph: dict | None = None
     ws_request_actions = False
+    ws_existing = []
 
     def on_transcript(text: str, is_final: bool):
         if is_final:
@@ -132,6 +133,8 @@ async def ws_transcribe(ws: WebSocket):
                         ws_graph = ctrl["graph"]
                     if "request_actions" in ctrl:
                         ws_request_actions = bool(ctrl["request_actions"])
+                    if "existing_topics" in ctrl:
+                        ws_existing = ctrl.get("existing_topics", [])
                 except Exception:
                     done = text == "done"
                 if done:
@@ -146,7 +149,7 @@ async def ws_transcribe(ws: WebSocket):
         full = " ".join(accumulated).strip()
         try:
             if full:
-                result = extract_thought(full, existing_topics=[], graph=ws_graph, request_actions=ws_request_actions)
+                result = extract_thought(full, ws_existing, graph=ws_graph, request_actions=ws_request_actions)
                 await ws.send_json({"type": "extraction", "data": result})
             await ws.close()
         except Exception as e:
