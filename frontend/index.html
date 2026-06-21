@@ -395,7 +395,7 @@
     var T=(name==='blank')?{hubs:[],kids:[],ghosts:[],edges:[],INNER:{},NAV:{},notes:{}}:TEMPLATES[name];
     hubs=(T.hubs||[]).map(cloneNode);kids=(T.kids||[]).map(cloneNode);ghosts=(T.ghosts||[]).map(cloneNode);fillers=ambientFillers.map(cloneNode);extras=[];
     edges=(T.edges||[]).map(function(e){return{a:e[0],b:e[1],dash:false};});
-    INNER=T.INNER||{};NAV=T.NAV||{};notes=JSON.parse(JSON.stringify(T.notes||{}));actionsStore={};eventsStore={};concernsStore={};categoryDescriptions={};aliases={};thoughtLog=[];thoughtSeq=0;galaxyDirty=false;
+    var rawInner=T.INNER||{};INNER={};Object.keys(rawInner).forEach(function(par){INNER[par]=(rawInner[par]||[]).map(function(s){return s.indexOf(SUBSEP)>=0?s:subKey(par,s);});});NAV=T.NAV||{};notes=JSON.parse(JSON.stringify(T.notes||{}));actionsStore={};eventsStore={};concernsStore={};categoryDescriptions={};aliases={};thoughtLog=[];thoughtSeq=0;galaxyDirty=false;
     M={};isHub={};[].concat(hubs,kids,ghosts,fillers).forEach(function(n){M[n.k]=n;});hubs.forEach(function(h){isHub[h.k]=true;});
     kids.forEach(function(k){(k.links||[]).forEach(function(l){edges.push({a:k.k,b:l,dash:false});});});
     ghosts.forEach(function(g){(g.links||[]).forEach(function(l){edges.push({a:g.k,b:l,dash:true});});});
@@ -1047,7 +1047,7 @@
       (tp.subtopics||[]).forEach(function(st){var sraw=(''+(st.name||'')).trim();if(!sraw)return;
         var srec=st.reconcile||{},subName=sraw.toLowerCase();
         if(srec.action==='merge'&&srec.target){var t=(''+srec.target).toLowerCase().trim();if(t)subName=t;}
-        var sk=subKey(key,subName);INNER[key]=INNER[key]||[];if(INNER[key].indexOf(sk)<0)INNER[key].push(sk);
+        var sk=subKey(key,subName);INNER[key]=INNER[key]||[];var _pi=INNER[key].indexOf(subName);if(_pi>=0){INNER[key][_pi]=sk;}else if(INNER[key].indexOf(sk)<0){INNER[key].push(sk);}
         var sexc=(st.excerpts&&st.excerpts.length)?st.excerpts:deriveExcerpts(original,sraw);
         pushNote(sk,{d:stamp,len:'note',num:num,title:title,t:original,contribution:st.contribution||'',excerpts:sexc,meta:meta});});
       absorbSubtopicNamed(key);
@@ -1110,7 +1110,7 @@
   async function fetchExtraction(text){
     var ex=existingTopics(),d=null;
     try{
-      var res=await fetch(API_BASE+'/extract-thought',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:text,existing_topics:ex,existing_subtopics:INNER,graph:graphSnapshot(),request_actions:requestActions})});
+      var res=await fetch(API_BASE+'/extract-thought',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:text,existing_topics:ex,existing_subtopics:(function(){var o={};Object.keys(INNER).forEach(function(p){o[p]=(INNER[p]||[]).map(dispLabel);});return o;})(),graph:graphSnapshot(),request_actions:requestActions})});
       if(!res.ok)throw new Error('server returned '+res.status);
       d=await res.json();
     }catch(e){
@@ -1398,7 +1398,7 @@
       // preserve the spoken text for the extraction handler, then tell the
       // backend we're done. the backend owns the close (avoids the dead-socket race).
       lastTranscript=finalText.trim();
-      var sendDone=function(){try{if(ws&&ws.readyState===WebSocket.OPEN)ws.send(JSON.stringify({type:'done',existing_topics:existingTopics(),existing_subtopics:INNER,graph:graphSnapshot(),request_actions:requestActions}));}catch(e){}};
+      var sendDone=function(){try{if(ws&&ws.readyState===WebSocket.OPEN)ws.send(JSON.stringify({type:'done',existing_topics:existingTopics(),existing_subtopics:(function(){var o={};Object.keys(INNER).forEach(function(p){o[p]=(INNER[p]||[]).map(dispLabel);});return o;})(),graph:graphSnapshot(),request_actions:requestActions}));}catch(e){}};
       if(ws&&ws.readyState===WebSocket.CONNECTING){var prevOpen=ws.onopen;ws.onopen=function(){if(prevOpen)prevOpen.apply(this,arguments);sendDone();};}
       else{sendDone();}
       // reset local state; the backend will close the socket → ws.onclose cleans the UI
