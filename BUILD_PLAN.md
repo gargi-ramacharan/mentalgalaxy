@@ -1,96 +1,212 @@
 # Build Plan — Thought Galaxy
-
-A realistic schedule, the demo script, and the submission checklist. Tuned for
-~14-16 productive hours with three people.
-
----
-
-## Before the clock starts (Saturday morning / pre-event)
-
-These don't count as "building during the event" — they're setup, and doing
-them early saves you 3-4 hours of integration pain later.
-
-- [ ] All three get accounts + API keys: Deepgram, Anthropic, Redis Cloud, Arize, Sentry
-- [ ] Fetch.ai accounts ready (you have these)
-- [ ] Google Cloud project: enable Calendar API + Gmail API, OAuth desktop creds → `google_credentials.json` (M3 only — can defer)
-- [ ] Go to the **Deepgram workshop** and the **Fetch.ai workshop** first thing. Grab their starter code and credits.
-- [ ] One person skims the uAgents quickstart so Fetch.ai isn't cold
+**Team:** Medha (A · pipeline), Linda (B · galaxy UI), Gargi (C · infra + agents)
+**Deadline:** Sunday 11am submission, judging 1-3pm
+**Current time:** ~6pm Saturday. ~15 hours left, ~11 productive.
 
 ---
 
-## Hour-by-hour
+## RIGHT NOW — 6pm to 7pm · Everyone: get running
 
-### Hours 0-3 · Foundation (everyone)
-- Clone scaffold, get `npm install` and `pip install` clean on all three machines
-- **Person A:** get Deepgram streaming working in isolation — speak, see text in terminal
-- **Person B:** get the Galaxy rendering with hardcoded fake nodes, tune the physics until it *feels* good
-- **Person C:** Redis Cloud connected, Sentry + Arize keys in, `ensure_index()` runs
+Do these in parallel. Don't help each other until your own machine is working.
 
-> Checkpoint: three pieces work alone. This is the riskiest integration moment — don't move on until Deepgram → terminal and fake-nodes → galaxy both work.
+**Medha (A)**
+```bash
+cd backend
+python -m venv venv && source venv/bin/activate
+pip install -r requirements.txt
+cp ../.env.example .env   # fill in DEEPGRAM_API_KEY + ANTHROPIC_API_KEY now
+uvicorn app.main:app --reload
+```
+→ hit localhost:8000/health → must return {"ok":true} before moving on
 
-### Hours 3-7 · Milestone 1 (everyone converges)
-- **A + B:** wire the WebSocket. Speak → partial transcript on screen → on pause, real bubbles bloom
-- **C:** tune the Claude classification prompt with real rambles (record yourselves complaining about the hackathon — perfect test data)
-- Make sure connections render and the type colors read clearly
+**Linda (B)**
+```bash
+cd frontend
+npm install
+npm run dev
+```
+→ open localhost:5173 AND your mindmap.html side by side
+→ your job all night is making the React app look + feel like your HTML
 
-> **Checkpoint: MILESTONE 1 DONE.** You now have a demoable, winning-on-its-own project. Lock it. Commit. Create the Devpost draft NOW (deadline midnight Saturday to guarantee judging).
+**Gargi (C)**
+- Create Redis Cloud free account → get connection string → paste as REDIS_URL in .env
+- Get Sentry DSN + Arize keys → paste into .env
+- Run: `python -c "from dotenv import load_dotenv; load_dotenv(); from app.memory import ensure_index; ensure_index(); print('Redis OK')"`
 
-### Hours 7-11 · Milestone 2
-- **A:** build the suggestion flow end-to-end (`/suggest`)
-- **C:** make Redis vector search real — replace the placeholder `_embed()` with a real embedding API (Voyage/OpenAI). This is what makes "you've felt this before" actually work
-- **B:** the guidance card UI — slide-in, the "drew on" past-context line
-- Optional but high-value: stand up the **Insight Agent** as a real Fetch.ai uAgent so the suggestion goes through Agentverse, not just a function call. That's what earns the Fetch.ai prize.
+---
 
-> Checkpoint: tap a stress bubble → grounded suggestion referencing a real past session. Commit.
+## 7pm to 9pm · Build in parallel, no merging yet
 
-### Hours 11-14 · Milestone 3 (only if M2 is solid)
-- **C:** Calendar Agent live — task bubble → real Google Calendar event
-- **A:** Email Agent → Gmail *draft* (never auto-send on stage)
-- **B:** execute button + status states on the card
-- Wire the agent bridge; ideally route through Fetch.ai messaging for the multi-agent story (Band prize: 2+ agents collaborating)
+### Medha (A) — Deepgram → terminal
+One job: speak into mic, see classified JSON nodes printed in terminal.
+- Test `deepgram_stream.py` directly first — just get words appearing
+- Then add the Claude classify call — paste a transcript, get nodes back
+- Do NOT touch the WebSocket yet. Terminal only.
 
-> Checkpoint: click execute → event appears in calendar. This is the closer.
+```bash
+# quick test once backend is running:
+curl -X POST http://localhost:8000/classify \
+  -H "Content-Type: application/json" \
+  -d '{"transcript": "I have a CS midterm friday and im stressed, also need to email my professor about an extension"}'
+```
+→ should return a session with 2-3 nodes. If it does, you're done for this block.
 
-### Hours 14-16 · Polish + demo prep (everyone)
-- Record a **backup demo video** in case wifi dies — this is non-negotiable
-- Pre-load a session with good past data so M2 suggestions land well
-- Write and rehearse the 4-min pitch (below)
-- Final Devpost: writeup, screenshots, repo link, video
-- **Simular:** post on X/LinkedIn tagging them + email zening@simular.ai if you used Sai at all (even just to vibe-code part of it)
+### Linda (B) — Port blob bubbles into Galaxy.jsx
+Reference your mindmap.html the whole time. Specifically port:
+- `blobPath()` function → add to Galaxy.jsx
+- `drawNode()` with the glow + sparkle dots → replace the basic D3 circles
+- Your color system: the organic palette, opacity, shadow blur
+- The gentle `alphaDecay` drift so it feels alive
+
+Don't worry about cluster zoom yet. Just get blobs rendering where circles are.
+
+### Gargi (C) — Wire Redis to actually save sessions
+Right now `main.py` saves sessions in a try/except that silently fails. Make it real:
+- Confirm `ensure_index()` passes
+- Call `save_session()` with a fake session object and confirm the key appears in Redis Cloud dashboard
+- Then confirm `get_session()` retrieves it back
+- Add `OPENAI_API_KEY` to .env (needed for real embeddings in memory.py — free tier is fine)
+
+---
+
+## 9pm · SYNC #1 (15 minutes, everyone stops)
+
+Show each other:
+- Medha: curl /classify returns clean nodes ✓
+- Linda: blobs visible on canvas in React ✓
+- Gargi: Redis save/retrieve confirmed ✓
+
+If all three work → wire Medha into Linda's canvas now.
+If any are broken → all three debug together before moving on.
+
+---
+
+## 9pm to 11pm · Milestone 1 (wire everything together)
+
+### Medha (A) + Linda (B) — Connect WebSocket to canvas
+- Medha: confirm WebSocket in main.py sends `{type:'nodes', nodes:[...]}` on utterance end
+- Linda: connect `useRecorder.js` to the WebSocket, feed nodes into Galaxy component
+- Speak → words appear as partial text → pause → blobs bloom on canvas
+
+This is your demo moment. Spend real time here. Speak messy rambles and tune the Claude prompt in `classify.py` until the nodes feel right.
+
+### Gargi (C) — Tune Claude prompt + start Fetch.ai
+- Help Medha test different rambles against the classifier — you're the prompt tuner
+- Once Redis is confirmed, start `python agents/insight_agent.py`
+- Copy the printed agent address into .env as INSIGHT_AGENT_ADDRESS
+- Register on Agentverse (agentverse.ai) — this is what earns Fetch.ai prize
+
+---
+
+## 11pm · MILESTONE 1 CHECKPOINT 🚨
+
+**STOP BUILDING. Do these three things first:**
+
+1. Demo it to each other — speak 60 seconds, blobs appear, connections draw
+2. **Create Devpost draft RIGHT NOW** — add all three teammates, project name, one line description. Even blank. This guarantees judging.
+3. Commit and push everything to GitHub
+
+You are now demoable. You can win from here. Don't forget this.
+
+---
+
+## 11pm to 1am · Milestone 2
+
+### Medha (A) — /suggest endpoint
+The endpoint already exists in main.py. Make it actually work:
+- `suggest.py` calls `get_session()` from Redis → pulls the tapped node → calls Claude → returns one suggestion
+- Test with curl:
+```bash
+curl -X POST http://localhost:8000/suggest \
+  -H "Content-Type: application/json" \
+  -d '{"node_id": "YOUR_NODE_ID", "session_id": "YOUR_SESSION_ID"}'
+```
+→ should return a warm, grounded suggestion sentence
+
+### Linda (B) — Guidance card UI
+- Tap a bubble → card slides in from right
+- Shows node type chip + text + suggestion from /suggest
+- "drew on past sessions" line at bottom if Redis returned past context
+- Close button
+- Reference the card styles already in styles.css
+
+### Gargi (C) — Route /suggest through Fetch.ai Insight Agent
+Instead of suggest.py calling Claude directly, route through the uAgent:
+- Insight Agent is already written in `agents/insight_agent.py`
+- Update `suggest.py` to send a message to the agent address and await reply
+- This is the difference between "we used Claude" and "we have a multi-agent system" — judges notice
+
+---
+
+## 1am · MILESTONE 2 CHECKPOINT
+
+Tap a bubble → guidance card appears → suggestion references something real.
+Commit. Push. You're done building.
+
+---
+
+## 1am to 2am · Wrap up
+
+- **Everyone:** record a 2-minute backup demo video on someone's phone. Non-negotiable. Wifi WILL be sketchy during judging.
+- Pre-load 2-3 past sessions with good data so M2 suggestions feel meaningful during the demo
+- Fix any obvious visual bugs
+- Sleep
+
+---
+
+## 8am to 10:30am · Submission push
+
+| Task | Who |
+|---|---|
+| Devpost writeup — problem, solution, tech stack, what you learned | Gargi |
+| Screenshots of the galaxy looking beautiful | Linda |
+| Upload backup demo video | Medha |
+| Rehearse 4-minute pitch out loud together, twice | Everyone |
+| Make sure all three are at your table by 1pm for judging | Everyone |
+
+**Devpost submission deadline: 11am. Do NOT miss this.**
 
 ---
 
 ## The 4-minute pitch
 
-1. **(0:00-0:30) The feeling.** "Come home overwhelmed, brain full of half-thoughts — I have a midterm, I'm behind on homework, I think my friend's mad at me. No app helps with that, because your brain doesn't think in checklists." Don't show the screen yet.
-2. **(0:30-2:00) Live demo, M1.** Talk through a real messy day. Let the bubbles bloom live. Let them watch the connections draw. This is the whole game — let it breathe.
-3. **(2:00-2:45) Guidance, M2.** Tap the stress bubble. Ask what to do. Show the suggestion pulling from a past session. "It knows I've been here before."
-4. **(2:45-3:20) Action, M3.** Click execute on a task bubble. Cut to the calendar — it's there. "From a thought I spoke, to a thing that's done."
-5. **(3:20-4:00) Stack + vision.** Quick: Deepgram voice, Claude reasoning, Fetch.ai agents, Redis memory. "This is a map of your whole inner life — and it acts on itself." End on the galaxy, full of bubbles.
+**(0:00 - 0:30) The problem — don't show screen yet**
+"You come home overwhelmed. Your brain is full — midterm Friday, behind on homework, a friend situation you haven't dealt with. No app helps with that. Notion wants you to organize. Todoist wants a list. But your brain doesn't think in lists."
 
-**If a piece breaks live:** the `/classify` REST endpoint is your fallback — type the transcript instead of speaking. The backup video is your hard floor.
+**(0:30 - 2:00) Live demo M1 — say nothing, let it breathe**
+Talk through a real messy day. Let the bubbles bloom live. Let the connections draw. The silence while the galaxy builds itself IS the pitch.
+
+**(2:00 - 2:45) M2 — the insight moment**
+Tap a stress bubble. "What should I do?" Show the suggestion card. "It's pulling from what I told it last week. It knows this isn't the first time."
+
+**(2:45 - 3:20) Tech stack — fast**
+"Deepgram handles the voice. Claude classifies every thought in real time. Fetch.ai agents handle the reasoning and execution. Redis remembers everything across sessions."
+
+**(3:20 - 4:00) Vision**
+"This is a map of your inner life. And unlike every other productivity app, it doesn't ask you to change how you think. You just talk."
+
+**If anything breaks live:** `/classify` REST endpoint is your fallback — type instead of speak. Backup video is your floor.
 
 ---
 
-## Sponsor checklist (what to actually claim)
+## Sponsor prize checklist
 
-| Sponsor | Eligible because | Do this to qualify |
+| Sponsor | What you did | How to claim |
 |---|---|---|
-| Deepgram | streaming STT is the input | works out of the box |
-| Anthropic | Claude is the reasoning core + built with Claude Code | mention Claude Code in writeup |
-| Fetch.ai | Insight/Calendar/Email as uAgents | register at least one on Agentverse |
-| Redis | vector search + agent memory | real embeddings, show the search |
-| Arize | classification logged + dashboard | screenshot the dashboard for judges |
-| Sentry | error monitoring across stack | just keep the DSN set |
-| Band | 2+ agents collaborating (M3) | route a task through 2 agents |
-| Simular | if you vibe-code with Sai | post + email per their rules |
+| **Deepgram** | Voice is the entire input layer | Works automatically — mention in writeup |
+| **Anthropic** | Claude classifies every thought + powers suggestions | Mention Claude Code in writeup |
+| **Fetch.ai** | Insight Agent routes suggestions via Agentverse | Register agent, show it's discoverable |
+| **Redis** | Saves sessions + semantic search across past thoughts | Show Redis dashboard to judges |
+| **Arize** | Logs every classification decision | Screenshot dashboard for judges |
+| **Sentry** | Error monitoring across stack | Just keep DSN set, mention in writeup |
 
-Realistic target if you ship M1+M2: Deepgram, Anthropic, Fetch.ai, Redis, Arize, Sentry. Add Band + Simular if M3 lands.
+Target: **6 sponsor prizes** from one coherent app.
 
 ---
 
-## Track choice
+## Track
 
-Primary: **Ddoski's World** (mental clarity / wellbeing access) OR **Ddoski's Toolbox** (a genuinely useful personal tool). World has the stronger story for VC judges; Toolbox rewards usefulness. Pick World unless the build leans hard utility.
+**Ddoski's World** — frame it as mental clarity and emotional organization access.
+"Every productivity app assumes you already know what you need to do. This one helps you figure it out."
 
-Also auto-considered: **Best UI/UX** (the galaxy is your best shot — make it beautiful), **Golden Bear** (frame the demo around a Berkeley student's day), **Hacker's Choice** (the live demo wins hearts).
+Also gunning for: **Best UI/UX** (the galaxy), **Golden Bear** (frame around Berkeley student life), **Hacker's Choice** (the live demo wins hearts).
