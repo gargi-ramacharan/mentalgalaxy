@@ -64,14 +64,10 @@ def suggest_for_node(node_id: str, session_id: str, fallback=None,
         return Suggestion(node_id=node_id, text="I couldn't find that session.")
 
     # node_id is the topic name; find it in the topics list.
-    # Fall through to aliases if the current name was set after the session was saved.
+    # Case-insensitive + alias fallback so renamed bubbles still resolve.
     topics = session.get("topics", [])
-    candidates = [node_id] + (aliases or [])
-    tapped = None
-    for candidate in candidates:
-        tapped = next((tp for tp in topics if tp.get("name") == candidate), None)
-        if tapped:
-            break
+    names = {node_id.lower(), *((a or "").lower() for a in (aliases or []))}
+    tapped = next((tp for tp in topics if (tp.get("name") or "").lower() in names), None)
     if not tapped:
         return Suggestion(node_id=node_id, text="I couldn't find that thought.")
 

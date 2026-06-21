@@ -51,6 +51,28 @@ SESSIONS: dict[str, Session] = {}
 SESSIONS_EXTRACT: dict[str, dict] = {}
 
 
+def _merge_session(existing: dict | None, new: dict) -> dict:
+    """Accumulate committed thoughts into one session blob so /suggest can
+    find any bubble on the map, not just the latest thought's topics."""
+    if not existing:
+        return new
+    merged = dict(existing)
+    # topics: union by lowercased name; a newer thought about the same topic wins
+    by_name = {(t.get("name") or "").lower(): t for t in merged.get("topics", [])}
+    for t in new.get("topics", []):
+        by_name[(t.get("name") or "").lower()] = t
+    merged["topics"] = list(by_name.values())
+    # concerns / actionItems / events: append (dedupe concerns by value)
+    existing_concerns = set(merged.get("concerns", []))
+    for c in new.get("concerns", []):
+        if c not in existing_concerns:
+            merged.setdefault("concerns", []).append(c)
+            existing_concerns.add(c)
+    merged["actionItems"] = merged.get("actionItems", []) + new.get("actionItems", [])
+    merged["events"] = merged.get("events", []) + new.get("events", [])
+    return merged
+
+
 @app.get("/health")
 def health():
     return {
@@ -225,14 +247,15 @@ def save_session_route(payload: dict):
     data = payload.get("data")
     if not session_id or not isinstance(data, dict):
         return {"ok": False, "error": "session_id (str) and data (dict) are required"}
-    SESSIONS_EXTRACT[session_id] = data
+    merged = _merge_session(SESSIONS_EXTRACT.get(session_id), data)
+    SESSIONS_EXTRACT[session_id] = merged
     try:
         from app.memory import save_session, ensure_index
         ensure_index()
-        save_session(session_id, data)
+        save_session(session_id, merged)
     except Exception as e:
         return {"ok": False, "error": str(e)}
-    return {"ok": True, "session_id": session_id, "topics_indexed": len(data.get("topics", []))}
+    return {"ok": True, "session_id": session_id, "topics_indexed": len(merged.get("topics", []))}
 
 
 @app.post("/classify")
