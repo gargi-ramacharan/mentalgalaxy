@@ -48,12 +48,15 @@ def _system_prompt(existing_topics: list[str]) -> str:
 Today is {today}. Use this to resolve relative dates like "next Friday", "tomorrow", "this weekend", "Tuesday 3-4pm".
 
 Schema:
-{{"summary":string,"topics":[{{"name":string,"status":"new"|"existing","kind":"topic"|"person"|"place","weight":number,"connects":[string]}}],"concerns":[string],"actionItems":[{{"text":string,"topic":string}}],"events":[{{"title":string,"date":string,"datetime":string,"duration_min":number,"topic":string}}]}}
+{{"title":string,"summary":string,"topics":[{{"name":string,"status":"new"|"existing","kind":"topic"|"person"|"place","weight":number,"connects":[string],"contribution":string,"excerpts":[string]}}],"concerns":[string],"actionItems":[{{"text":string,"topic":string}}],"events":[{{"title":string,"date":string,"datetime":string,"duration_min":number,"topic":string}}]}}
 Rules:
+- title is a short (3-6 word) human-friendly headline for THIS whole entry.
 - topics are the main ideas / areas of life mentioned. Names are short and lowercase.
 - weight is 1-5: how central/important this topic is in THIS entry.
 - Reuse these EXISTING topics when they fit (status 'existing'); otherwise 'new': {existing}.
 - 'connects' lists other topic names from this same response that are related.
+- 'contribution' is ONE short sentence on how this entry relates to / contributes to this topic.
+- 'excerpts' is 1-3 SHORT verbatim substrings copied EXACTLY, character-for-character, from the input text that pertain to this topic. Do NOT paraphrase, reword, fix typos, or change casing — copy exact spans so they can be located in the original. If nothing maps cleanly, return an empty array.
 - Only include actionItems and events when genuinely implied. Many plain reflections have NONE — return empty arrays then; never invent them.
 - events have a time/date (deadlines, appointments, trips). actionItems are tasks the person could do.
 - 'kind' is person for named people, place for locations/trips, else topic.
@@ -167,7 +170,22 @@ def extract_local(text: str, existing_topics: list[str]) -> dict[str, Any]:
         summary = summary[:137].rstrip() + "…"
 
     topics = sorted(topic_map.values(), key=lambda t: t["weight"], reverse=True)
+
+    # Per-topic excerpts (exact sentences mentioning the topic) + a contribution line.
+    for t in topics:
+        name = t["name"]
+        matches = [s for s in sentences if _mentions(s, name)]
+        t["excerpts"] = matches[:2]
+        t["contribution"] = (
+            f"This entry mentions {name}." if matches else f"This entry relates to {name}."
+        )
+
+    # Short headline from the summary.
+    title_words = summary.split()
+    title = " ".join(title_words[:6]) + ("…" if len(title_words) > 6 else "")
+
     return {
+        "title": title or "untitled thought",
         "summary": summary,
         "topics": topics,
         "concerns": concerns[:4],
@@ -182,7 +200,7 @@ def extract_thought(text: str, existing_topics: list[str] | None = None) -> dict
     """Claude → local rules."""
     existing = existing_topics or []
     try:
-        data, source, model = chat_json(_system_prompt(existing), text, max_tokens=1000)
+        data, source, model = chat_json(_system_prompt(existing), text, max_tokens=1500)
         data["source"] = source
         data["model"] = model
         return data
