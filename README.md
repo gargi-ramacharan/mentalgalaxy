@@ -1,4 +1,4 @@
-# Thought Galaxy 🌌
+# Mental Galaxy 🌌
 
 Voice-first thought mapping. You talk through your day — your stresses, your tasks, your half-formed ideas — and watch them organize themselves into a living constellation. Ask any bubble for guidance and an agent pulls from everything you've said before to suggest a real next step. When you're ready, it can go execute the tasks for you.
 
