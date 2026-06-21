@@ -5,45 +5,26 @@ to Deepgram's live endpoint and stream interim + final transcripts back out
 so words appear on screen as the person speaks.
 """
 import os
-from deepgram import (
-    DeepgramClient,
-    LiveTranscriptionEvents,
-    LiveOptions,
-)
+from deepgram import Deepgram
 
 DEEPGRAM_API_KEY = os.environ["DEEPGRAM_API_KEY"]
 
+async def make_live_connection(on_transcript, on_utterance_end):
+    dg = Deepgram(DEEPGRAM_API_KEY)
+    socket = await dg.transcription.live({
+        "smart_format": True,
+        "model": "nova-2",
+        "interim_results": True,
+    })
 
-def make_live_connection(on_transcript, on_utterance_end):
-    """Create a Deepgram live connection.
+    def handle_transcript(data):
+        alt = data["channel"]["alternatives"][0]
+        text = alt.get("transcript", "")
+        is_final = data.get("is_final", False)
+        if text:
+            on_transcript(text, is_final)
+        if data.get("speech_final"):
+            on_utterance_end()
 
-    on_transcript(text, is_final): called for every chunk; is_final marks a
-        settled phrase you can safely classify.
-    on_utterance_end(): called when the speaker pauses — a natural moment to
-        send the accumulated text to Claude.
-    """
-    dg = DeepgramClient(DEEPGRAM_API_KEY)
-    connection = dg.listen.websocket.v("1")
-
-    def _on_message(_self, result, **kwargs):
-        sentence = result.channel.alternatives[0].transcript
-        if not sentence:
-            return
-        on_transcript(sentence, result.is_final)
-
-    def _on_utterance_end(_self, *args, **kwargs):
-        on_utterance_end()
-
-    connection.on(LiveTranscriptionEvents.Transcript, _on_message)
-    connection.on(LiveTranscriptionEvents.UtteranceEnd, _on_utterance_end)
-
-    options = LiveOptions(
-        model="nova-3",          # Deepgram's best general model
-        language="en-US",
-        smart_format=True,       # punctuation + capitalization
-        interim_results=True,    # gives the live-typing effect
-        utterance_end_ms="1000", # 1s pause = end of a thought
-        vad_events=True,
-    )
-    connection.start(options)
-    return connection
+    socket.registerHandler(socket.event.TRANSCRIPT_RECEIVED, handle_transcript)
+    return socket

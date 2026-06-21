@@ -60,6 +60,7 @@ async def ws_transcribe(ws: WebSocket):
 
     loop = asyncio.get_event_loop()
     accumulated: list[str] = []
+    sid = str(uuid.uuid4())
 
     def on_transcript(text: str, is_final: bool):
         asyncio.run_coroutine_threadsafe(
@@ -80,8 +81,12 @@ async def ws_transcribe(ws: WebSocket):
             ),
             loop,
         )
+        asyncio.run_coroutine_threadsafe(
+            ws.send_json({"type": "session_id", "session_id": sid}),
+            loop,
+        )
 
-    dg = make_live_connection(on_transcript, on_utterance_end)
+    dg = await make_live_connection(on_transcript, on_utterance_end)
 
     try:
         while True:
@@ -90,12 +95,11 @@ async def ws_transcribe(ws: WebSocket):
     except WebSocketDisconnect:
         pass
     finally:
-        dg.finish()
+        await dg.finish()
         # persist the finished session
         full = " ".join(accumulated).strip()
         if full:
             nodes = classify_transcript(full)
-            sid = str(uuid.uuid4())
             session = Session(
                 id=sid,
                 created_at=datetime.datetime.utcnow().isoformat(),
